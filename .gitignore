@@ -1,0 +1,13 @@
+/target/
+Cargo.lock
+*.db
+*.db-shm
+*.db-wal
+build/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+*.o
+*.a
+*.so
+*.dylib
