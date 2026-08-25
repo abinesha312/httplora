@@ -7,6 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_library(radio_hal STATIC
     radio_hal.cpp
     mock_serial.cpp
+    serial_posix.cpp
 )
 
 target_include_directories(radio_hal PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
