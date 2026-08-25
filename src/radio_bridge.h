@@ -25,6 +25,15 @@ extern "C" {
     void mock_radio_set_connected(RadioHandle* handle, bool connected);
     void mock_radio_simulate_receive(RadioHandle* handle, const uint8_t* from_addr, size_t addr_len,
                                       const uint8_t* payload, size_t payload_len);
+    
+    // Lossy channel simulation (SIMULATED, not real RF)
+    void mock_radio_configure_lossy_channel(RadioHandle* handle, double drop_prob, uint32_t delay_ms,
+                                             double burst_loss_prob, uint32_t burst_loss_count, uint32_t seed);
+    
+    // Statistics
+    uint64_t mock_radio_get_tx_count(const RadioHandle* handle);
+    uint64_t mock_radio_get_tx_dropped(const RadioHandle* handle);
+    uint64_t mock_radio_get_rx_count(const RadioHandle* handle);
 }
 
 } // namespace bridge

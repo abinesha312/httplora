@@ -34,6 +34,21 @@ pub mod ffi {
         // Mock control (for testing)
         fn mock_radio_set_connected(handle: *mut RadioHandle, connected: bool);
         fn mock_radio_simulate_receive(handle: *mut RadioHandle, from_addr: &[u8], payload: &[u8]);
+        
+        // Lossy channel simulation (SIMULATED, not real RF)
+        fn mock_radio_configure_lossy_channel(
+            handle: *mut RadioHandle,
+            drop_prob: f64,
+            delay_ms: u32,
+            burst_loss_prob: f64,
+            burst_loss_count: u32,
+            seed: u32,
+        );
+        
+        // Statistics
+        fn mock_radio_get_tx_count(handle: *const RadioHandle) -> u64;
+        fn mock_radio_get_tx_dropped(handle: *const RadioHandle) -> u64;
+        fn mock_radio_get_rx_count(handle: *const RadioHandle) -> u64;
     }
 }
 

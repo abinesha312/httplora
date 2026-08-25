@@ -88,6 +88,37 @@ impl Radio {
     pub fn mock_simulate_receive(&mut self, from: &[u8], payload: &[u8]) {
         radio_ffi::mock_radio_simulate_receive(self.handle, from, payload);
     }
+    
+    /// Configure lossy channel simulation (SIMULATED, not real RF)
+    pub fn configure_lossy_channel(
+        &mut self,
+        drop_prob: f64,
+        delay_ms: u32,
+        burst_loss_prob: f64,
+        burst_loss_count: u32,
+        seed: u32,
+    ) {
+        radio_ffi::mock_radio_configure_lossy_channel(
+            self.handle,
+            drop_prob,
+            delay_ms,
+            burst_loss_prob,
+            burst_loss_count,
+            seed,
+        );
+    }
+    
+    pub fn get_tx_count(&self) -> u64 {
+        radio_ffi::mock_radio_get_tx_count(self.handle)
+    }
+    
+    pub fn get_tx_dropped(&self) -> u64 {
+        radio_ffi::mock_radio_get_tx_dropped(self.handle)
+    }
+    
+    pub fn get_rx_count(&self) -> u64 {
+        radio_ffi::mock_radio_get_rx_count(self.handle)
+    }
 }
 
 impl Drop for Radio {

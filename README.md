@@ -31,7 +31,7 @@ The toy LoRa frame MTU is **200 bytes** for the payload. Larger payloads are rej
 
 ## Features
 
-### Behavior
+### Core Behavior
 
 1. **POST /v1/messages**: Accept message with `{to, payload}` → return 202 with message ID, persist to SQLite, worker attempts radio transmission
 2. **GET /v1/messages/{id}**: Check message status: `queued`, `sent`, `failed`, or `dead`
@@ -40,6 +40,35 @@ The toy LoRa frame MTU is **200 bytes** for the payload. Larger payloads are rej
 5. **Fail-closed**: If radio is disconnected, messages stay queued and are never marked as `sent` incorrectly
 6. **Retry logic**: Exponential backoff with jitter (1s base, max 60s, 5 attempts before marking `dead`)
 7. **Optional authentication**: Bearer token auth via `HTTPLORA_TOKEN` environment variable
+
+### Reliability Protocol (Novel Systems Component)
+
+**Stop-and-wait ARQ** with fail-closed invariants:
+
+- **Sequence numbers**: Each message gets a unique sequence number
+- **ACK protocol**: Sender waits for ACK before marking message as `sent`
+- **Timeout and retry**: Configurable timeout with exponential backoff
+- **Fail-closed invariant**: A message status is `sent` **only after ACK is observed**
+  - Without ACK: message remains `queued` or becomes `dead` after max retries
+  - Never falsely reports success
+- **Baseline comparison**: Fire-and-forget mode (no ACKs) for protocol evaluation
+
+### Simulated Lossy Channel (NOT Real RF)
+
+For **protocol evaluation only**, the mock radio includes a configurable lossy channel simulator:
+
+- **Packet loss**: Configurable drop probability (e.g., 0%, 10%, 30%, 50%)
+- **Transmission delay**: Simulated propagation delay
+- **Burst loss**: Simulates correlated loss events
+- **Deterministic seed**: Reproducible experiments
+
+**CRITICAL DISCLAIMER**: This is a **software simulation**, not real RF measurements. Results do NOT represent:
+- Actual LoRa radio performance
+- Field trial measurements
+- Real-world propagation characteristics
+- Hardware-specific behavior
+
+Use ONLY for comparing fire-and-forget vs ARQ protocols in controlled simulated conditions.
 
 ## Building
 
@@ -193,6 +222,8 @@ cargo run --release
 
 ## Testing
 
+### Unit and Integration Tests
+
 The test suite includes:
 - **Mock send → sent status**: Successful mock send transitions message to `sent`
 - **Unplugged mock → retries then dead, never sent**: Disconnected mock retries 5 times, marks `dead`, never falsely marks `sent`
@@ -204,11 +235,44 @@ The test suite includes:
 - **C++ mock compilation via FFI**: Verifies FFI bridge works
 
 ```bash
-# Run tests (owner responsibility - NOT run during build)
+# Run integration tests (owner responsibility - NOT run during build)
 cargo test
 ```
 
-**Note**: Tests are written but not executed automatically. The owner should run tests manually after build.
+### Property and Invariant Tests
+
+Formal properties verified (not Coq proofs, but systematic test coverage):
+
+1. **Invariant: sent ⟹ ACK observed** - Status `sent` only after ACK received
+2. **Invariant: disconnected ⟹ ¬sent** - Disconnected radio never marks messages `sent`
+3. **Invariant: payload > MTU ⟹ ¬queued** - Oversized payloads rejected at API boundary
+4. **Property: Stop-and-wait ⟹ no duplicates** - Sequence numbers are unique
+5. **Property: Fire-and-forget ⟹ no ACK wait** - Baseline mode never blocks on ACKs
+6. **Property: Lossy channel drop rate ≈ configured** - Simulator matches configuration
+7. **Property: Durable queue ⟹ survives restart** - Messages persist across crashes
+8. **Property: ACK timeout enforced** - Timeout fires within expected bounds
+
+```bash
+# Run property tests
+cargo test --test invariant_test
+```
+
+### Evaluation Harness
+
+Systematic protocol comparison under simulated packet loss (see `EVAL.md` for details):
+
+```bash
+# Run lossy channel evaluation (SIMULATED, not real RF)
+cargo test --test eval_lossy -- --nocapture
+```
+
+Sweeps loss rates (0%, 10%, 30%, 50%) comparing fire-and-forget vs stop-and-wait ARQ. Reports:
+- Delivery rate
+- Mean latency
+- Retry count
+- Dead message count
+
+**IMPORTANT**: Results are from **simulated** channel loss, NOT field measurements.
 
 ## Failure Modes
 
@@ -238,24 +302,52 @@ MIT
 
 ## Limitations & Disclaimers
 
-**This is a toy learning project. Not production-ready.**
+**This is a toy research prototype. Not production-ready. Not published.**
+
+### What This Is NOT
 
 - ❌ **Not Meshtastic**: Custom toy protocol, not compatible with Meshtastic mesh networks
+- ❌ **Not a Meshtastic comparison**: No Meshtastic implementation, no hardware comparison
+- ❌ **Not published research**: Not peer-reviewed, not affiliated with NeurIPS/NSDI/any conference
+- ❌ **Not field-tested**: Lossy channel is SIMULATED in software, not real RF measurements
 - ❌ **Not a production radio stack**: No proper LoRa PHY/MAC layer implementation
 - ❌ **Mock has no RF**: Default backend is pure simulation, no radio waves
 - ❌ **Real serial is toy framing**: Simple binary protocol, not a standard
 - ❌ **No encryption**: Messages transmitted in plaintext
-- ❌ **No delivery ACKs**: "Sent" means transmitted to dongle, not received by remote node
 - ❌ **No mesh networking**: Single gateway, no multi-hop routing
 - ❌ **No frequency management**: Assumes radio firmware handles LoRa modulation
 - ❌ **No range claims**: RF characteristics depend entirely on your hardware
 - ❌ **No carrier-grade reliability**: SQLite queue + retry logic, but not hardened for critical systems
 
-**What this IS useful for:**
+### Evaluation Results Disclaimer
+
+The evaluation harness (`EVAL.md`) produces results from **SIMULATED** packet loss:
+- ✅ Valid for comparing fire-and-forget vs ARQ protocols
+- ✅ Demonstrates fail-closed invariants
+- ❌ NOT real RF measurements
+- ❌ NOT field trial data
+- ❌ NOT representative of actual LoRa radio performance
+- ❌ NOT comparable to Meshtastic (different protocol, no real hardware)
+
+**Simulated channel ≠ field trial.** Do not cite these results as real-world performance.
+
+### What This IS Useful For
+
 - Learning HTTP → hardware gateway patterns
 - Understanding durable queues and retry logic
+- Studying ARQ protocols and fail-closed properties
 - Prototyping IoT data collection workflows
-- Teaching fail-closed error handling
+- Teaching systematic protocol evaluation
+
+### For Production Use
 
 **For production LoRa/Meshtastic:**
 Use official Meshtastic firmware, devices, and clients. This project is not affiliated with or endorsed by Meshtastic.
+
+### Academic Use
+
+If using for research or coursework:
+- Clearly label all results as "simulated"
+- Do NOT claim field measurements
+- Do NOT compare to Meshtastic without real hardware
+- Cite as a teaching/learning prototype, not production system

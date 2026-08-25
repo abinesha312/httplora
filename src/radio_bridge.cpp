@@ -119,6 +119,66 @@ void mock_radio_simulate_receive(RadioHandle* handle, const uint8_t* from_addr, 
     mock->simulate_receive(frame);
 }
 
+void mock_radio_configure_lossy_channel(RadioHandle* handle, double drop_prob, uint32_t delay_ms,
+                                         double burst_loss_prob, uint32_t burst_loss_count, uint32_t seed) {
+    if (!handle || !handle->hal) {
+        return;
+    }
+    
+    auto* mock = dynamic_cast<httplora::MockRadioHAL*>(handle->hal);
+    if (!mock) {
+        return;
+    }
+    
+    httplora::LossyChannelConfig config;
+    config.drop_probability = drop_prob;
+    config.delay_ms = delay_ms;
+    config.burst_loss_prob = burst_loss_prob;
+    config.burst_loss_count = burst_loss_count;
+    config.random_seed = seed;
+    
+    mock->configure_lossy_channel(config);
+}
+
+uint64_t mock_radio_get_tx_count(const RadioHandle* handle) {
+    if (!handle || !handle->hal) {
+        return 0;
+    }
+    
+    auto* mock = dynamic_cast<httplora::MockRadioHAL*>(handle->hal);
+    if (!mock) {
+        return 0;
+    }
+    
+    return mock->get_tx_count();
+}
+
+uint64_t mock_radio_get_tx_dropped(const RadioHandle* handle) {
+    if (!handle || !handle->hal) {
+        return 0;
+    }
+    
+    auto* mock = dynamic_cast<httplora::MockRadioHAL*>(handle->hal);
+    if (!mock) {
+        return 0;
+    }
+    
+    return mock->get_tx_dropped();
+}
+
+uint64_t mock_radio_get_rx_count(const RadioHandle* handle) {
+    if (!handle || !handle->hal) {
+        return 0;
+    }
+    
+    auto* mock = dynamic_cast<httplora::MockRadioHAL*>(handle->hal);
+    if (!mock) {
+        return 0;
+    }
+    
+    return mock->get_rx_count();
+}
+
 } // extern "C"
 
 } // namespace bridge
