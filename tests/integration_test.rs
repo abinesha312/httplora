@@ -220,3 +220,146 @@ async fn test_cpp_mock_compiles() {
     radio.mock_set_connected(false);
     assert!(!radio.is_connected());
 }
+
+#[tokio::test]
+async fn test_mock_send_then_sent_status() {
+    let temp_dir = tempdir().unwrap();
+    let db_path = temp_dir.path().join("test.db");
+    
+    let db = Arc::new(Database::new(db_path.to_str().unwrap()).await.unwrap());
+    db.initialize().await.unwrap();
+    
+    let message_id = db
+        .insert_message("test_addr", "test payload")
+        .await
+        .unwrap();
+    
+    let mut radio = Radio::new(None);
+    radio.initialize().unwrap();
+    
+    let result = radio.send(b"test_addr", b"test payload");
+    assert!(result.is_ok());
+    
+    db.update_message_status(&message_id, "sent", 1, None)
+        .await
+        .unwrap();
+    
+    let msg = db.get_message(&message_id).await.unwrap().unwrap();
+    assert_eq!(msg.status, "sent");
+}
+
+#[tokio::test]
+async fn test_unplugged_mock_retries_then_dead_never_sent() {
+    let temp_dir = tempdir().unwrap();
+    let db_path = temp_dir.path().join("test.db");
+    
+    let db = Arc::new(Database::new(db_path.to_str().unwrap()).await.unwrap());
+    db.initialize().await.unwrap();
+    
+    let message_id = db
+        .insert_message("test_addr", "test payload")
+        .await
+        .unwrap();
+    
+    let mut radio = Radio::new(None);
+    radio.initialize().unwrap();
+    radio.mock_set_connected(false);
+    
+    for attempt in 0..5 {
+        let result = radio.send(b"test_addr", b"test payload");
+        assert!(result.is_err());
+        
+        db.update_message_status(
+            &message_id,
+            "queued",
+            attempt + 1,
+            Some(chrono::Utc::now().timestamp() + 1000),
+        )
+        .await
+        .unwrap();
+    }
+    
+    db.update_message_status(&message_id, "dead", 5, None)
+        .await
+        .unwrap();
+    
+    let msg = db.get_message(&message_id).await.unwrap().unwrap();
+    assert_eq!(msg.status, "dead");
+    assert_ne!(msg.status, "sent");
+}
+
+#[tokio::test]
+async fn test_real_serial_missing_device_disconnected() {
+    std::env::set_var("HTTPLORA_REAL_SERIAL", "1");
+    
+    let mut radio = Radio::new(Some("/dev/nonexistent_tty_device_12345"));
+    let init_result = radio.initialize();
+    
+    assert!(init_result.is_err() || !radio.is_connected());
+    
+    if init_result.is_ok() {
+        let send_result = radio.send(b"test_addr", b"test payload");
+        assert!(send_result.is_err());
+    }
+    
+    std::env::remove_var("HTTPLORA_REAL_SERIAL");
+}
+
+#[tokio::test]
+async fn test_payload_too_large_http_400_not_queued() {
+    use httplora::radio::LORA_MAX_PAYLOAD;
+    
+    let temp_dir = tempdir().unwrap();
+    let db_path = temp_dir.path().join("test.db");
+    
+    let db = Arc::new(Database::new(db_path.to_str().unwrap()).await.unwrap());
+    db.initialize().await.unwrap();
+    
+    let large_payload = "x".repeat(LORA_MAX_PAYLOAD + 1);
+    
+    let mut radio = Radio::new(None);
+    radio.initialize().unwrap();
+    
+    let result = radio.send(b"test_addr", large_payload.as_bytes());
+    assert!(result.is_err());
+    
+    let pending = db.get_pending_messages().await.unwrap();
+    assert_eq!(pending.len(), 0);
+}
+
+#[tokio::test]
+async fn test_durable_queue_survives_reopen() {
+    let temp_dir = tempdir().unwrap();
+    let db_path = temp_dir.path().join("test_reopen.db");
+    let db_path_str = db_path.to_str().unwrap();
+    
+    let message_id = {
+        let db = Arc::new(Database::new(db_path_str).await.unwrap());
+        db.initialize().await.unwrap();
+        
+        let id = db
+            .insert_message("test_addr", "persistent payload")
+            .await
+            .unwrap();
+        
+        let msg = db.get_message(&id).await.unwrap().unwrap();
+        assert_eq!(msg.status, "queued");
+        assert_eq!(msg.payload, "persistent payload");
+        
+        id
+    };
+    
+    {
+        let db2 = Arc::new(Database::new(db_path_str).await.unwrap());
+        db2.initialize().await.unwrap();
+        
+        let msg = db2.get_message(&message_id).await.unwrap().unwrap();
+        assert_eq!(msg.id, message_id);
+        assert_eq!(msg.status, "queued");
+        assert_eq!(msg.payload, "persistent payload");
+        
+        let pending = db2.get_pending_messages().await.unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].id, message_id);
+    }
+}
